@@ -1,4 +1,11 @@
 #include "systemcalls.h"
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <errno.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -16,7 +23,13 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
+    int status = system(cmd);
 
+    if (status == -1)
+    {
+        return false;
+    }
+    
     return true;
 }
 
@@ -47,7 +60,7 @@ bool do_exec(int count, ...)
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
-    command[count] = command[count];
+    //command[count] = command[count];
 
 /*
  * TODO:
@@ -58,10 +71,45 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
+    int status;
+    bool output = true;
+    pid_t childPid;
 
+    childPid = fork();
+    
+    switch (childPid)
+    {
+    case -1: // Problem with creating a new process    
+        output = false;
+        break;
+    case 0: // Child: execute command
+        execv(command[0], command);
+        exit(127);
+    default: // Parent: wait for child process to complete
+        
+        while (waitpid(childPid, &status, 0) == -1) {
+            if (errno != EINTR) {       /* Error other than EINTR */
+                output = false;
+            }
+        }
+
+        if (WIFEXITED(status)) {
+            if (WEXITSTATUS(status) > 0)
+            {
+                output = false;
+            }
+        }
+        else
+        {
+            output = false;
+        }
+
+        break;
+    }
+        
     va_end(args);
 
-    return true;
+    return output;
 }
 
 /**
@@ -92,8 +140,60 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
+    int status;
+    bool output = true;
+    pid_t childPid; 
 
+    int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+
+    if (fd < 0) 
+    { 
+        output = false;
+    }
+    else
+    {
+        childPid = fork();
+    
+        switch (childPid)
+        {
+        case -1: // Problem with creating a new process    
+            output = false;
+            break;
+        case 0: // Child: execute command
+            if (dup2(fd, 1) >= 0) 
+            {
+                execv(command[0], command);
+            }
+
+            close(fd);
+            exit(127);
+
+        default: // Parent: wait for child process to complete
+
+            while (waitpid(childPid, &status, 0) == -1) {
+                if (errno != EINTR) {       /* Error other than EINTR */
+                    output = false;
+                }
+            }
+
+            if (WIFEXITED(status)) {
+                if (WEXITSTATUS(status) > 0)
+                {
+                    output = false;
+                }
+            }
+            else
+            {
+                output = false;
+            }
+
+            break;
+        }
+
+    }
+    
+    close(fd);
     va_end(args);
 
-    return true;
+    return output;
 }
