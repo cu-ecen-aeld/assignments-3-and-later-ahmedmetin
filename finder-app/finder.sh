@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 NUMBER_OF_ARGUMENTS=$#
 
